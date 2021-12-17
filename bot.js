@@ -1,30 +1,183 @@
-import DiscordJS, { Intents, Message } from 'discord.js'
-import dotenv from 'dotenv'
+// DEPENDENCIES
+require('dotenv').config()
+const { Client, Intents } = require('discord.js');
+const ytdl = require('ytdl-core');
 
-dotenv.config();
 
-const client = new DiscordJS.Client({
-    intents: [
-        Intents.FLAGS.GUILDS,
-        Intents.FLAGS.GUILD_MESSAGES,
-        Intents.FLAGS.GUILD_MESSAGE_REACTIONS,
-        Intents.FLAGS.GUILD_MEMBERS,
-        Intents.FLAGS.GUILD_VOICE_STATES
-    ]
+// SETTING UP CONFIGS
+const prefix = "!";
+const token = `${process.env.BOT_TOKEN}`;
+
+
+const client = new Client({ intents: [Intents.FLAGS.GUILD_MESSAGES] })
+
+
+// LISTENERS
+client.once('ready', () => {
+    console.log('Ready!');
+    client.user.setPresence({
+        status: "online",
+        game: {
+            name: "!help",
+            type: "PLAYING"
+        }
+    });
+});
+client.once('reconnecting', () => {
+    console.log('Reconnecting!');
+});
+client.once('disconnect', () => {
+    console.log('Disconnect!');
 });
 
-let prefix = '!'
-client.on('ready', () => {
-    client.user.setActivity('!help')
-    console.log('ready')
-})
 
-client.on('messageCreate', (message) => {
-    if (message.content === prefix + 'help'){
-        message.reply({
-            content: "you need help"
+// READ USER COMMANDS
+client.on('message', async message => {
+    // IGNORE BOT MESSAGES AND CHECK IF MESSAGE AIMED AT BOT
+    if (message.author.bot || !message.content.startsWith(prefix)) return;
+
+
+    const serverQueue = queue.get(message.guild.id);
+
+    if (message.content.startsWith(`${prefix}play`.toLocaleLowerCase())) {
+        console.log('PLAYING');
+        execute(message, serverQueue);
+        return;
+
+    } else if (message.content.startsWith(`${prefix}skip`.toLocaleLowerCase())) {
+        skip(message, serverQueue);
+        return;
+
+    } else if (message.content.startsWith(`${prefix}stop`.toLocaleLowerCase())) {
+        stop(message, serverQueue);
+        return;
+
+    } else if (message.content.startsWith(`${prefix}help`.toLocaleLowerCase())) {
+        message.channel.send("IDK ask Macks what to do.");
+
+    } else {
+        message.channel.send("You need to enter a valid command!");
+    }
+
+});
+
+// TRACKS QUEUE
+const queue = new Map();
+
+// PROCESS COMMANDS
+async function execute(message, serverQueue) {
+    const args = message.content.split(" ");
+
+    const voiceChannel = message.member.voice.channel;
+    if (!voiceChannel)
+        return message.channel.send(
+            "You need to be in a voice channel to play music!"
+        );
+
+    const permissions = voiceChannel.permissionsFor(message.client.user);
+    if (!permissions.has("CONNECT") || !permissions.has("SPEAK")) {
+        return message.channel.send(
+            "Ask Macks to grant me permissions to use voice channels!"
+        );
+    }
+
+
+
+
+    // FETCH SONG FROM YT
+    const songInfo = await ytdl.getInfo(args[1]);
+    const song = {
+        title: songInfo.videoDetails.title,
+        url: songInfo.videoDetails.video_url,
+    };
+
+    // ADD TO QUEUE
+    if (!serverQueue) {
+
+    } else {
+        serverQueue.songs.push(song);
+        console.log(serverQueue.songs);
+        return message.channel.send(`${song.title} has been added to the queue!`);
+    }
+
+    // IDK REALLY MULTI SERVER STUFF
+    // Creating the contract for our queue
+    const queueContruct = {
+        textChannel: message.channel,
+        voiceChannel: voiceChannel,
+        connection: null,
+        songs: [],
+        volume: 5,
+        playing: true,
+    };
+    // Setting the queue using our contract
+    queue.set(message.guild.id, queueContruct);
+    // Pushing the song to our songs array
+    queueContruct.songs.push(song);
+
+    try {
+        // Here we try to join the voicechat and save our connection into our object.
+        var connection = await voiceChannel.join();
+        queueContruct.connection = connection;
+        // Calling the play function to start a song
+        play(message.guild, queueContruct.songs[0]);
+    } catch (err) {
+        // Printing the error message if the bot fails to join the voicechat
+        console.log(err);
+        queue.delete(message.guild.id);
+        return message.channel.send(err);
+    }
+
+
+}
+//  PLAY TRACKS
+function play(guild, song) {
+    const serverQueue = queue.get(guild.id);
+    if (!song) {
+        setTimeout(function () {
+            serverQueue.voiceChannel.leave()
+            queue.delete(guild.id);
+
+        }, 10000);
+        return;
+    }
+    const dispatcher = serverQueue.connection
+        .play(ytdl(song.url))
+        .on("finish", () => {
+            serverQueue.songs.shift();
+            play(guild, serverQueue.songs[0]);
         })
-    } 
-})
+        .on("error", error => console.error(error));
+    dispatcher.setVolumeLogarithmic(serverQueue.volume / 5);
+    serverQueue.textChannel.send(`Start playing: **${song.title}**`);
+}
 
-client.login(process.env.TOKEN)
+
+
+// SKIP TRACKS
+function skip(message, serverQueue) {
+    if (!message.member.voice.channel)
+        return message.channel.send(
+            "You have to be in a voice channel to stop the music!"
+        );
+    if (!serverQueue)
+        return message.channel.send("There is no song that I could skip!");
+    serverQueue.connection.dispatcher.end();
+}
+
+
+// STOP TRACKS
+function stop(message, serverQueue) {
+    if (!message.member.voice.channel)
+        return message.channel.send(
+            "You have to be in a voice channel to stop the music!"
+        );
+
+    if (!serverQueue)
+        return message.channel.send("There is no song that I could stop!");
+
+    serverQueue.songs = [];
+    serverQueue.connection.dispatcher.end();
+}
+
+client.login(token);
