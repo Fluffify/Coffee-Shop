@@ -40,7 +40,6 @@ client.on('message', async message => {
     const serverQueue = queue.get(message.guild.id);
 
     if (message.content.startsWith(`${prefix}play`.toLocaleLowerCase())) {
-        console.log('PLAYING');
         execute(message, serverQueue);
         return;
 
@@ -51,6 +50,19 @@ client.on('message', async message => {
     } else if (message.content.startsWith(`${prefix}stop`.toLocaleLowerCase())) {
         stop(message, serverQueue);
         return;
+
+    } else if (message.content.startsWith(`${prefix}pause`.toLocaleLowerCase())) {
+        pause(message, serverQueue);
+        return;
+
+    } else if (message.content.startsWith(`${prefix}resume`.toLocaleLowerCase())) {
+        resume(message, serverQueue);
+        return;
+
+    } else if (message.content.startsWith(`${prefix}queue`.toLocaleLowerCase())) {
+        showQueue(message, serverQueue);
+        return;
+
 
     } else if (message.content.startsWith(`${prefix}help`.toLocaleLowerCase())) {
         message.channel.send("IDK ask Macks what to do.");
@@ -138,9 +150,10 @@ function play(guild, song) {
             serverQueue.voiceChannel.leave()
             queue.delete(guild.id);
 
-        }, 10000);
+        }, 1000);
         return;
     }
+
     const dispatcher = serverQueue.connection
         .play(ytdl(song.url))
         .on("finish", () => {
@@ -149,7 +162,7 @@ function play(guild, song) {
         })
         .on("error", error => console.error(error));
     dispatcher.setVolumeLogarithmic(serverQueue.volume / 5);
-    serverQueue.textChannel.send(`Start playing: **${song.title}**`);
+    serverQueue.textChannel.send(`Now playing: ${song.title}`);
 }
 
 
@@ -158,10 +171,10 @@ function play(guild, song) {
 function skip(message, serverQueue) {
     if (!message.member.voice.channel)
         return message.channel.send(
-            "You have to be in a voice channel to stop the music!"
+            "You have to be in a voice channel to use bot commands!"
         );
     if (!serverQueue)
-        return message.channel.send("There is no song that I could skip!");
+        return message.channel.send("Queue is empty");
     serverQueue.connection.dispatcher.end();
 }
 
@@ -170,14 +183,71 @@ function skip(message, serverQueue) {
 function stop(message, serverQueue) {
     if (!message.member.voice.channel)
         return message.channel.send(
-            "You have to be in a voice channel to stop the music!"
+            "You have to be in a voice channel to use bot commands!"
         );
 
     if (!serverQueue)
-        return message.channel.send("There is no song that I could stop!");
+        return message.channel.send("Queue is empty");
 
     serverQueue.songs = [];
     serverQueue.connection.dispatcher.end();
 }
+
+// PAUSE TRACKS
+async function pause(message, serverQueue) {
+
+    if (!message.member.voice.channel)
+        return message.channel.send(
+            "You have to be in a voice channel to use bot commands!"
+        );
+
+    if (!serverQueue)
+        return message.channel.send("Queue is empty");
+
+    if (serverQueue.connection.dispatcher.paused)
+        return message.channel.send("Queue is already paused");
+
+    await serverQueue.connection.dispatcher.pause();
+    message.channel.send("Player paused");
+}
+
+
+// RESUME TRACKS
+async function resume(message, serverQueue) {
+    if (!message.member.voice.channel)
+        return message.channel.send(
+            "You have to be in a voice channel to use bot commands!"
+        );
+
+    if (!serverQueue)
+        return message.channel.send("Queue is empty");
+
+    if (serverQueue.connection.dispatcher.resumed)
+        return message.channel.send("Queue is already playing tracks");
+
+    // SEEMS BUGGED AF
+    await serverQueue.connection.dispatcher.pause();
+    await serverQueue.connection.dispatcher.resume();
+    await serverQueue.connection.dispatcher.pause();
+    await serverQueue.connection.dispatcher.resume();
+    message.channel.send("Player resumed");
+}
+
+//  SHOW QUEUE
+function showQueue(message, serverQueue) {
+    if (!message.member.voice.channel)
+        return message.channel.send(
+            "You have to be in a voice channel to use bot commands!"
+        );
+    if (!serverQueue)
+        return message.channel.send("Queue is empty");
+
+    
+    message.channel.send("Songs in queue:")
+    for (song in serverQueue.songs)
+        message.channel.send(`${song} - ${serverQueue.songs[song]["title"]}`)
+    
+}
+
 
 client.login(token);
