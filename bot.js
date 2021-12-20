@@ -9,7 +9,10 @@ const prefix = "!";
 const token = `${process.env.BOT_TOKEN}`;
 
 
+
 const client = new Client({ intents: [Intents.FLAGS.GUILD_MESSAGES] })
+
+let loopFlag = false
 
 
 // LISTENERS
@@ -63,9 +66,16 @@ client.on('message', async message => {
         showQueue(message, serverQueue);
         return;
 
+    } else if (message.content.startsWith(`${prefix}replay`.toLocaleLowerCase())) {
+        replay(message, serverQueue);
+        return;
+
+    } else if (message.content.startsWith(`${prefix}repeat`.toLocaleLowerCase())) {
+        repeat(message, serverQueue);
+        return;
 
     } else if (message.content.startsWith(`${prefix}help`.toLocaleLowerCase())) {
-        message.channel.send("IDK ask Macks what to do.");
+        message.channel.send("Available commands: [play, skip, stop, pause, resume, queue, replay, repeat]");
 
     } else {
         message.channel.send("You need to enter a valid command!");
@@ -201,7 +211,9 @@ function play(guild, song) {
     const dispatcher = serverQueue.connection
         .play(ytdl(song.url))
         .on("finish", () => {
-            serverQueue.songs.shift();
+            if (!loopFlag) {
+                serverQueue.songs.shift();
+            }
             play(guild, serverQueue.songs[0]);
         })
         .on("error", error => console.error(error));
@@ -220,6 +232,9 @@ function skip(message, serverQueue) {
     if (!serverQueue)
         return message.channel.send("Queue is empty");
     serverQueue.connection.dispatcher.end();
+
+    if (loopFlag)
+        loopFlag = false
 }
 
 
@@ -293,5 +308,38 @@ function showQueue(message, serverQueue) {
 
 }
 
+
+// REPLAY TRACK
+function replay(message, serverQueue) {
+    if (!message.member.voice.channel)
+        return message.channel.send(
+            "You have to be in a voice channel to use bot commands!"
+        );
+    if (!serverQueue)
+        return message.channel.send("Queue is empty");
+
+
+    serverQueue.songs.splice(0, 0, serverQueue.songs[0])
+    skip(message, serverQueue)
+    message.channel.send(`Replaying ${serverQueue.songs[0]["title"]}`)
+
+}
+
+// REPEAT TRACK
+function repeat(message, serverQueue) {
+    if (!message.member.voice.channel)
+        return message.channel.send(
+            "You have to be in a voice channel to use bot commands!"
+        );
+    if (!serverQueue)
+        return message.channel.send("Queue is empty");
+
+    loopFlag = !loopFlag
+    if (loopFlag)
+        message.channel.send(`Repeating ON for: ${serverQueue.songs[0]["title"]}!`);
+    else
+        message.channel.send(`Repeating OFF for: ${serverQueue.songs[0]["title"]}!`);
+
+}
 
 client.login(token);

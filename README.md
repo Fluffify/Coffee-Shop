@@ -8,11 +8,13 @@
 - [x] Add the ability to play via urls
 - [x] Add the ability to search for tracks
 - [x] Add the ability to pause/resume
+- [x] Add the ability to Replay
+- [x] Add the ability to Repeat
+- [x] Add Queue command
 - [ ] Pause/Resume in none retarded way
 - [ ] Detect player state accurately and respond accordingly
 - [ ] Handle Errors
 - [ ] Volume Control
-- [x] Add Queue command
 
 ### Refactor
 
