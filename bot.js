@@ -1,18 +1,25 @@
 // DEPENDENCIES
 require('dotenv').config()
 const { Client, Intents } = require('discord.js');
-const ytdl = require('ytdl-core');
-const yts = require('yt-search');
 
 // SETTING UP CONFIGS
 const prefix = "!";
 const token = `${process.env.BOT_TOKEN}`;
 
-
-
 const client = new Client({ intents: [Intents.FLAGS.GUILD_MESSAGES] })
+const queue = new Map();
+let loop = false
 
-let loopFlag = false
+// COMMANDS
+const enqueue = require('./commands/enqueue').enqueue
+const play = require('./commands/play').play
+const skip = require('./commands/skip').skip
+const showQueue = require('./commands/queue').showQueue
+const replay = require('./commands/replay').replay
+const repeat = require('./commands/repeat').repeat
+const stop = require('./commands/stop').stop
+const pause = require('./commands/pause').pause
+const resume = require('./commands/resume').resume
 
 
 // LISTENERS
@@ -36,310 +43,60 @@ client.once('disconnect', () => {
 
 // READ USER COMMANDS
 client.on('message', async message => {
+
     // IGNORE BOT MESSAGES AND CHECK IF MESSAGE AIMED AT BOT
     if (message.author.bot || !message.content.startsWith(prefix)) return;
 
-
     const serverQueue = queue.get(message.guild.id);
 
-    if (message.content.startsWith(`${prefix}play`.toLocaleLowerCase())) {
-        execute(message, serverQueue);
-        return;
+    // EXTRACT COMMAND AND INVOKE CORRESPONDING FUNCTION
+    if (message.content.startsWith(`${prefix}`)) {
+        const command = (message.content.replace(`${prefix}`, "").split(" ")[0]);
 
-    } else if (message.content.startsWith(`${prefix}skip`.toLocaleLowerCase())) {
-        skip(message, serverQueue);
-        return;
+        switch (command.toLowerCase()) {
+            case 'play':
+                enqueue(message, serverQueue, queue, loop);
+                break;
 
-    } else if (message.content.startsWith(`${prefix}stop`.toLocaleLowerCase())) {
-        stop(message, serverQueue);
-        return;
+            case 'skip':
+                skip(message, serverQueue);
+                break;
 
-    } else if (message.content.startsWith(`${prefix}pause`.toLocaleLowerCase())) {
-        pause(message, serverQueue);
-        return;
+            case 'stop':
+                stop(message, serverQueue);
+                break;
 
-    } else if (message.content.startsWith(`${prefix}resume`.toLocaleLowerCase())) {
-        resume(message, serverQueue);
-        return;
+            case 'pause':
+                pause(message, serverQueue);
+                break;
 
-    } else if (message.content.startsWith(`${prefix}queue`.toLocaleLowerCase())) {
-        showQueue(message, serverQueue);
-        return;
+            case 'resume':
+                resume(message, serverQueue);
+                break;
 
-    } else if (message.content.startsWith(`${prefix}replay`.toLocaleLowerCase())) {
-        replay(message, serverQueue);
-        return;
+            case 'queue':
+                showQueue(message, serverQueue, queue);
+                break;
 
-    } else if (message.content.startsWith(`${prefix}repeat`.toLocaleLowerCase())) {
-        repeat(message, serverQueue);
-        return;
+            case 'replay':
+                serverQueue.songs = replay(message, serverQueue, queue);
+                break;
 
-    } else if (message.content.startsWith(`${prefix}help`.toLocaleLowerCase())) {
-        message.channel.send("Available commands: [play, skip, stop, pause, resume, queue, replay, repeat]");
+            case 'repeat':
+                loop = repeat(message, serverQueue, loop);
+                serverQueue.connection.on("finish", () => {play(message.guild, serverQueue.songs[0], queue, loop)});
+                break;
 
-    } else {
-        message.channel.send("You need to enter a valid command!");
+            case 'help':
+                message.channel.send("Available commands: [play, skip, stop, pause, resume, queue, replay, and repeat]");
+                break;
+
+            default:
+                message.channel.send("You need to enter a valid command!");
+
+        }
+
     }
-
 });
-
-// TRACKS QUEUE
-const queue = new Map();
-
-// PROCESS COMMANDS
-async function execute(message, serverQueue) {
-    const args = message.content.split(" ");
-
-    const voiceChannel = message.member.voice.channel;
-    if (!voiceChannel)
-        return message.channel.send(
-            "You need to be in a voice channel to play music!"
-        );
-
-    const permissions = voiceChannel.permissionsFor(message.client.user);
-    if (!permissions.has("CONNECT") || !permissions.has("SPEAK")) {
-        return message.channel.send(
-            "Ask Macks to grant me permissions to use voice channels!"
-        );
-    }
-
-
-
-
-    // FETCH SONG FROM YT
-    if (ytdl.validateURL(args[1])) {
-        const songInfo = await ytdl.getInfo(args[1]);
-        const song = {
-            title: songInfo.videoDetails.title,
-            url: songInfo.videoDetails.video_url,
-        };
-
-        // ADD TO QUEUE
-        if (!serverQueue) {
-
-        } else {
-            serverQueue.songs.push(song);
-            console.log(serverQueue.songs);
-            return message.channel.send(`${song.title} has been added to the queue!`);
-        }
-
-        // IDK REALLY MULTI SERVER STUFF
-        // Creating the contract for our queue
-        const queueContruct = {
-            textChannel: message.channel,
-            voiceChannel: voiceChannel,
-            connection: null,
-            songs: [],
-            volume: 5,
-            playing: true,
-        };
-        // Setting the queue using our contract
-        queue.set(message.guild.id, queueContruct);
-        // Pushing the song to our songs array
-        queueContruct.songs.push(song);
-
-        try {
-            // Here we try to join the voicechat and save our connection into our object.
-            var connection = await voiceChannel.join();
-            queueContruct.connection = connection;
-            // Calling the play function to start a song
-            play(message.guild, queueContruct.songs[0]);
-        } catch (err) {
-            // Printing the error message if the bot fails to join the voicechat
-            console.log(err);
-            queue.delete(message.guild.id);
-            return message.channel.send(err);
-        }
-    }
-    else {
-        const songInfo = await yts(args.slice(1).join(" "));
-        const song = {
-            title: songInfo["all"][0]["title"],
-            url: songInfo["all"][0]["url"],
-        };
-        // ADD TO QUEUE
-        if (!serverQueue) {
-
-        } else {
-            serverQueue.songs.push(song);
-            console.log(serverQueue.songs);
-            return message.channel.send(`${song.title} has been added to the queue!`);
-        }
-
-        // IDK REALLY MULTI SERVER STUFF
-        // Creating the contract for our queue
-        const queueContruct = {
-            textChannel: message.channel,
-            voiceChannel: voiceChannel,
-            connection: null,
-            songs: [],
-            volume: 5,
-            playing: true,
-        };
-        // Setting the queue using our contract
-        queue.set(message.guild.id, queueContruct);
-        // Pushing the song to our songs array
-        queueContruct.songs.push(song);
-
-        try {
-            // Here we try to join the voicechat and save our connection into our object.
-            var connection = await voiceChannel.join();
-            queueContruct.connection = connection;
-            // Calling the play function to start a song
-            play(message.guild, queueContruct.songs[0]);
-        } catch (err) {
-            // Printing the error message if the bot fails to join the voicechat
-            console.log(err);
-            queue.delete(message.guild.id);
-            return message.channel.send(err);
-        }
-    }
-}
-
-//  PLAY TRACKS
-function play(guild, song) {
-    const serverQueue = queue.get(guild.id);
-    if (!song) {
-        setTimeout(function () {
-            serverQueue.voiceChannel.leave()
-            queue.delete(guild.id);
-
-        }, 1000);
-        return;
-    }
-
-    const dispatcher = serverQueue.connection
-        .play(ytdl(song.url))
-        .on("finish", () => {
-            if (!loopFlag) {
-                serverQueue.songs.shift();
-            }
-            play(guild, serverQueue.songs[0]);
-        })
-        .on("error", error => console.error(error));
-    dispatcher.setVolumeLogarithmic(serverQueue.volume / 5);
-    serverQueue.textChannel.send(`Now playing: ${song.title}`);
-}
-
-
-
-// SKIP TRACKS
-function skip(message, serverQueue) {
-    if (!message.member.voice.channel)
-        return message.channel.send(
-            "You have to be in a voice channel to use bot commands!"
-        );
-    if (!serverQueue)
-        return message.channel.send("Queue is empty");
-    serverQueue.connection.dispatcher.end();
-
-    if (loopFlag)
-        loopFlag = false
-}
-
-
-// STOP TRACKS
-function stop(message, serverQueue) {
-    if (!message.member.voice.channel)
-        return message.channel.send(
-            "You have to be in a voice channel to use bot commands!"
-        );
-
-    if (!serverQueue)
-        return message.channel.send("Queue is empty");
-
-    serverQueue.songs = [];
-    serverQueue.connection.dispatcher.end();
-}
-
-// PAUSE TRACKS
-async function pause(message, serverQueue) {
-
-    if (!message.member.voice.channel)
-        return message.channel.send(
-            "You have to be in a voice channel to use bot commands!"
-        );
-
-    if (!serverQueue)
-        return message.channel.send("Queue is empty");
-
-    if (serverQueue.connection.dispatcher.paused)
-        return message.channel.send("Queue is already paused");
-
-    await serverQueue.connection.dispatcher.pause();
-    message.channel.send("Player paused");
-}
-
-
-// RESUME TRACKS
-async function resume(message, serverQueue) {
-    if (!message.member.voice.channel)
-        return message.channel.send(
-            "You have to be in a voice channel to use bot commands!"
-        );
-
-    if (!serverQueue)
-        return message.channel.send("Queue is empty");
-
-    if (serverQueue.connection.dispatcher.resumed)
-        return message.channel.send("Queue is already playing tracks");
-
-    // SEEMS BUGGED AF
-    await serverQueue.connection.dispatcher.pause();
-    await serverQueue.connection.dispatcher.resume();
-    await serverQueue.connection.dispatcher.pause();
-    await serverQueue.connection.dispatcher.resume();
-    message.channel.send("Player resumed");
-}
-
-//  SHOW QUEUE
-function showQueue(message, serverQueue) {
-    if (!message.member.voice.channel)
-        return message.channel.send(
-            "You have to be in a voice channel to use bot commands!"
-        );
-    if (!serverQueue)
-        return message.channel.send("Queue is empty");
-
-
-    message.channel.send("Songs in queue:")
-    for (song in serverQueue.songs)
-        message.channel.send(`${song} - ${serverQueue.songs[song]["title"]}`)
-
-}
-
-
-// REPLAY TRACK
-function replay(message, serverQueue) {
-    if (!message.member.voice.channel)
-        return message.channel.send(
-            "You have to be in a voice channel to use bot commands!"
-        );
-    if (!serverQueue)
-        return message.channel.send("Queue is empty");
-
-
-    serverQueue.songs.splice(0, 0, serverQueue.songs[0])
-    skip(message, serverQueue)
-    message.channel.send(`Replaying ${serverQueue.songs[0]["title"]}`)
-
-}
-
-// REPEAT TRACK
-function repeat(message, serverQueue) {
-    if (!message.member.voice.channel)
-        return message.channel.send(
-            "You have to be in a voice channel to use bot commands!"
-        );
-    if (!serverQueue)
-        return message.channel.send("Queue is empty");
-
-    loopFlag = !loopFlag
-    if (loopFlag)
-        message.channel.send(`Repeating ON for: ${serverQueue.songs[0]["title"]}!`);
-    else
-        message.channel.send(`Repeating OFF for: ${serverQueue.songs[0]["title"]}!`);
-
-}
 
 client.login(token);
